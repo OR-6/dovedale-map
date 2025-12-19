@@ -7,7 +7,7 @@ import z from "zod";
 const trainSchema = z.array(z.string()).length(4);
 const playerSchema = z.strictObject({
 	username: z.string(),
-	trainData: trainSchema,
+	trainData: trainSchema.optional(),
 	position: z.strictObject({
 		x: z.int(),
 		y: z.int(),
@@ -55,7 +55,7 @@ app.post("/positions", async (context) => {
 	const result = requestSchema.safeParse(await context.req.json());
 
 	if (!result.success) {
-		return context.json(result.error, 400);
+		return context.json({ success: false, errors: result.error.issues }, 400);
 	}
 
 	const { token: bodyToken, ...dataToSend } = result.data;
@@ -72,7 +72,7 @@ app.post("/positions", async (context) => {
 		webSocket.send(JSON.stringify(dataToSend));
 	});
 
-	return context.status(204);
+	return context.json({ success: true });
 });
 
 export default {
