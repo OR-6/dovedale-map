@@ -4,6 +4,5 @@ module.exports = {
 	interpreter: "bun",
 	env: {
 		PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}`,
-	},
-	cwd: "~/dovedale-map"
+	}
 };
