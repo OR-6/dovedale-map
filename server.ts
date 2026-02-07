@@ -28,6 +28,8 @@ const playerSchema = z.strictObject({
 const requestSchema = z.strictObject({
 	jobId: z.string(),
 	players: z.array(playerSchema),
+	// deprecated
+	token: z.string().optional(),
 });
 
 const app = new Hono();
@@ -88,12 +90,18 @@ async function positionsApi(context: Context) {
 			400,
 		);
 	}
-	const authorizationHeader = context.req.header("Authorization");
-	if (authorizationHeader !== `Bearer ${ROBLOX_TOKEN}`) {
+	const { token: bodyToken, ...data } = result.data;
+		// once all Dovedale servers migrate to version using headers, body token support will be removed
+		const authorizationHeader = context.req.header("Authorization");
+		if (
+			authorizationHeader !== `Bearer ${ROBLOX_TOKEN}` &&
+			bodyToken !== ROBLOX_TOKEN
+		) {
+		if (authorizationHeader !== `Bearer ${ROBLOX_TOKEN}`) {
 		return context.text("Invalid token", 401);
 	}
 
-	result.data.players = result.data.players.map((player) => ({
+	data.players = data.players.map((player) => ({
 		username: player.username,
 		userId: player.userId,
 		position: player.position,
@@ -108,31 +116,31 @@ async function positionsApi(context: Context) {
 			: player.trainData,
 	}));
 
-	if (serverTimeouts.has(result.data.jobId)) {
+	if (serverTimeouts.has(data.jobId)) {
 		console.log("Clearing current timeout");
-		serverTimeouts.delete(result.data.jobId);
+		serverTimeouts.delete(data.jobId);
 	}
 
 	serverTimeouts.set(
-		result.data.jobId,
+		data.jobId,
 		setTimeout(() => {
 			console.log("Clearing, timeout have passed");
-			playersCache.delete(result.data.jobId);
-			serverTimeouts.delete(result.data.jobId);
+			playersCache.delete(data.jobId);
+			serverTimeouts.delete(data.jobId);
 		}, STALE_SERVER_TIMEOUT),
 	);
 
-	if (result.data.players[0]?.userId) {
+	if (data.players[0]?.userId) {
 		playersCache.set(
-			result.data.jobId,
-			result.data.players
+			data.jobId,
+			data.players
 				.filter((player) => player.userId !== undefined)
 				.map((player) => player.userId as number),
 		);
 	}
 
 	webSockets.forEach((webSocket) => {
-		webSocket.send(JSON.stringify(result.data));
+		webSocket.send(JSON.stringify(data));
 	});
 
 	return context.json({ success: true });
