@@ -91,13 +91,12 @@ async function positionsApi(context: Context) {
 		);
 	}
 	const { token: bodyToken, ...data } = result.data;
-		// once all Dovedale servers migrate to version using headers, body token support will be removed
-		const authorizationHeader = context.req.header("Authorization");
-		if (
-			authorizationHeader !== `Bearer ${ROBLOX_TOKEN}` &&
-			bodyToken !== ROBLOX_TOKEN
-		) {
-		if (authorizationHeader !== `Bearer ${ROBLOX_TOKEN}`) {
+	// once all Dovedale servers migrate to version using headers, body token support will be removed
+	const authorizationHeader = context.req.header("Authorization");
+	if (
+		authorizationHeader !== `Bearer ${ROBLOX_TOKEN}` &&
+		bodyToken !== ROBLOX_TOKEN
+	) {
 		return context.text("Invalid token", 401);
 	}
 
