@@ -118,8 +118,10 @@ class AppState {
 		this.serverData = {};
 		this.currentServer = "all";
 		this.hoveredPlayer = null;
+		this.pinnedPlayer = null;
 		this.isDragging = false;
 		this.dragStart = null;
+		this.dragStartTime = null;
 		this.currentScale = 1;
 		this.lastTouchDistance = 0;
 		this.ws = null;
@@ -294,7 +296,7 @@ const getPlayerAtPosition = (canvasX, canvasY) => {
 	return null;
 };
 
-const updateTooltip = (player) => {
+const updateTooltip = (player, isPinned = false) => {
 	if (!player) {
 		elements.tooltip.classList.add("hidden");
 		return;
@@ -414,6 +416,12 @@ const updateTooltip = (player) => {
 	elements.tooltip.style.left = `${finalX}px`;
 	elements.tooltip.style.top = `${finalY}px`;
 	elements.tooltip.style.visibility = "visible";
+
+	if (isPinned) {
+		elements.tooltip.style.boxShadow = "0 0 0 2px rgba(59, 130, 246, 0.5)";
+	} else {
+		elements.tooltip.style.boxShadow = "";
+	}
 };
 
 let resizeTimeout = null;
@@ -761,8 +769,9 @@ const drawScene = () => {
 		const name = player.username ?? "Unknown";
 
 		const canvasPosition = worldToCanvas(worldX, worldY);
+		const isPinned = state.pinnedPlayer?.username === name;
 		const isHovered = state.hoveredPlayer?.username === name;
-		const baseRadius = isHovered ? 2.5 : 2;
+		const baseRadius = (isPinned || isHovered) ? 2.5 : 2;
 		const radius = baseRadius * dotScaleFactor;
 
 		if (player.trainData) {
@@ -785,7 +794,7 @@ const drawScene = () => {
 			//  check train.svg. can't access the DOM of a svg within a <img>, but want to be able to dynamically color.
 			//  draw the train by hand!
 			const trainMarkerDim = { x: 12, y: 6 };
-			const trainScale = isHovered ? 0.5 : 0.4;
+			const trainScale = (isPinned || isHovered) ? 0.5 : 0.4;
 			context.translate(canvasPosition.x, canvasPosition.y);
 			context.rotate(markerAngle);
 			context.scale(trainScale, trainScale);
@@ -797,7 +806,7 @@ const drawScene = () => {
 			context.strokeStyle = "#000080";
 			context.lineWidth = 1;
 			context.stroke(TRAIN_PATH.window); // WINDOW
-			context.strokeStyle = isHovered ? "white" : "black";;
+			context.strokeStyle = (isPinned || isHovered) ? "white" : "black";
 			context.lineWidth = 1;
 			context.stroke(TRAIN_PATH.outline); // OUTLINE
 			context.translate(trainMarkerDim.x / 2, trainMarkerDim.y / 2);
@@ -813,8 +822,8 @@ const drawScene = () => {
 			context.arc(canvasPosition.x, canvasPosition.y, radius, 0, Math.PI * 2);
 			context.fill();
 
-			context.strokeStyle = isHovered ? "white" : "black";
-			context.lineWidth = Math.max((isHovered ? 0.7 : 0.4) * scaleFactor, 0.25);
+			context.strokeStyle = (isPinned || isHovered) ? "white" : "black";
+			context.lineWidth = Math.max(((isPinned || isHovered) ? 0.7 : 0.4) * scaleFactor, 0.25);
 			context.stroke();
 		}
 	});
@@ -824,6 +833,20 @@ const drawScene = () => {
 			delete state.previousPlayerPosition[previousPlayerId];
 		}
 	});
+
+	// Update tooltip position if a player is pinned
+	if (state.pinnedPlayer) {
+		const pinnedStillExists = playersToShow.find(
+			p => p.username === state.pinnedPlayer.username
+		);
+		
+		if (pinnedStillExists) {
+			updateTooltip(pinnedStillExists, true);
+		} else {
+			state.pinnedPlayer = null;
+			elements.tooltip.classList.add("hidden");
+		}
+	}
 
 	if (state.currentScale > 300) return;
 	const markerFontSize = Math.max(0.2, 10 / Math.pow(state.currentScale, 0.3));
@@ -905,13 +928,14 @@ const handleMouseEvents = () => {
 			mousePosition.x,
 			mousePosition.y,
 		);
+		state.dragStartTime = Date.now();
 		state.isDragging = true;
 		return false;
 	});
 
 	canvas.addEventListener("mousemove", (event) => {
 		if (state.isDragging) {
-			if (state.hoveredPlayer) {
+			if (state.hoveredPlayer && !state.pinnedPlayer) {
 				state.hoveredPlayer = null;
 				elements.tooltip.classList.add("hidden");
 			}
@@ -927,13 +951,15 @@ const handleMouseEvents = () => {
 			context.translate(distanceX, distanceY);
 			drawScene();
 		} else {
-			const mousePosition = getCanvasCoordinates(event);
-			const player = getPlayerAtPosition(mousePosition.x, mousePosition.y);
+			if (!state.pinnedPlayer) {
+				const mousePosition = getCanvasCoordinates(event);
+				const player = getPlayerAtPosition(mousePosition.x, mousePosition.y);
 
-			if (player !== state.hoveredPlayer) {
-				state.hoveredPlayer = player;
-				updateTooltip(player, event.clientX, event.clientY);
-				drawScene();
+				if (player !== state.hoveredPlayer) {
+					state.hoveredPlayer = player;
+					updateTooltip(player, false);
+					drawScene();
+				}
 			}
 		}
 	});
@@ -942,16 +968,42 @@ const handleMouseEvents = () => {
 		state.isDragging = false;
 		state.dragStart = null;
 
-		if (state.hoveredPlayer) {
+		if (state.hoveredPlayer && !state.pinnedPlayer) {
 			state.hoveredPlayer = null;
 			elements.tooltip.classList.add("hidden");
 			drawScene();
 		}
 	});
 
-	canvas.addEventListener("mouseup", () => {
+	canvas.addEventListener("mouseup", (event) => {
+		const clickDuration = Date.now() - state.dragStartTime;
+		const mousePosition = getCanvasCoordinates(event);
+		
+		if (clickDuration < 200) {
+			const player = getPlayerAtPosition(mousePosition.x, mousePosition.y);
+			
+			if (player) {
+				if (state.pinnedPlayer?.username === player.username) {
+					state.pinnedPlayer = null;
+					state.hoveredPlayer = null;
+					elements.tooltip.classList.add("hidden");
+				} else {
+					state.pinnedPlayer = player;
+					state.hoveredPlayer = null;
+					updateTooltip(player, true);
+				}
+				drawScene();
+			} else if (state.pinnedPlayer) {
+				// Clicked empty space, unpin
+				state.pinnedPlayer = null;
+				elements.tooltip.classList.add("hidden");
+				drawScene();
+			}
+		}
+
 		state.isDragging = false;
 		state.dragStart = null;
+		state.dragStartTime = null;
 	});
 
 	canvas.addEventListener(
@@ -968,11 +1020,12 @@ const handleMouseEvents = () => {
 };
 
 const handleTouchEvents = () => {
+	let touchStartTime = null;
+
 	canvas.addEventListener(
 		"touchstart",
 		(event) => {
-			state.hoveredPlayer = null;
-			elements.tooltip.classList.add("hidden");
+			touchStartTime = Date.now();
 
 			if (event.touches.length === 1) {
 				const touchPosition = getCanvasCoordinates(event.touches[0]);
@@ -992,9 +1045,6 @@ const handleTouchEvents = () => {
 		"touchmove",
 		(event) => {
 			event.preventDefault();
-
-			state.hoveredPlayer = null;
-			elements.tooltip.classList.add("hidden");
 
 			if (event.touches.length === 1 && state.isDragging) {
 				const touchPosition = getCanvasCoordinates(event.touches[0]);
@@ -1024,10 +1074,36 @@ const handleTouchEvents = () => {
 	);
 
 	canvas.addEventListener("touchend", (event) => {
+		const touchDuration = Date.now() - touchStartTime;
+
 		if (event.touches.length < 2) state.lastTouchDistance = 0;
+		
 		if (event.touches.length === 0) {
+			if (touchDuration < 200 && event.changedTouches.length === 1) {
+				const touchPosition = getCanvasCoordinates(event.changedTouches[0]);
+				const player = getPlayerAtPosition(touchPosition.x, touchPosition.y);
+				
+				if (player) {
+					if (state.pinnedPlayer?.username === player.username) {
+						state.pinnedPlayer = null;
+						state.hoveredPlayer = null;
+						elements.tooltip.classList.add("hidden");
+					} else {
+						state.pinnedPlayer = player;
+						state.hoveredPlayer = null;
+						updateTooltip(player, true);
+					}
+					drawScene();
+				} else if (state.pinnedPlayer) {
+					state.pinnedPlayer = null;
+					elements.tooltip.classList.add("hidden");
+					drawScene();
+				}
+			}
+
 			state.isDragging = false;
 			state.dragStart = null;
+			touchStartTime = null;
 		}
 	});
 };
