@@ -1003,6 +1003,7 @@ const handleMouseEvents = () => {
 
 		state.isDragging = false;
 		state.dragStart = null;
+		state.dragStartTime = null;
 	});
 
 	canvas.addEventListener(
@@ -1102,6 +1103,7 @@ const handleTouchEvents = () => {
 
 			state.isDragging = false;
 			state.dragStart = null;
+			touchStartTime = null;
 		}
 	});
 };
